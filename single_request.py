@@ -11,22 +11,22 @@ def process_stream_line(line):
         # Decode the line from bytes to string if necessary
         if isinstance(line, bytes):
             line = line.decode('utf-8')
-            
+
         # Remove the "data: " prefix if it exists
         if line.startswith('data: '):
             line = line[6:]
-            
+
         # Parse the JSON content
         if line.strip() == '[DONE]':
             return None
-            
+
         data = json.loads(line)
-        
+
         # Extract the content from the response structure
         if 'choices' in data and len(data['choices']) > 0:
             if 'delta' in data['choices'][0] and 'content' in data['choices'][0]['delta']:
                 return data['choices'][0]['delta']['content']
-            
+
         return None
     except json.JSONDecodeError:
         return None
@@ -58,7 +58,7 @@ def make_chat_request(prompt):
     try:
         total_chars = 0
         print("Making request...")
-        
+
         with requests.post(
             api_url,
             headers=headers,
@@ -67,9 +67,9 @@ def make_chat_request(prompt):
             timeout=180,
             stream=True  # Enable streaming
         ) as response:
-            
+
             print(f"Response status: {response.status_code}")
-            
+
             if response.ok:
                 print("\nStreaming response:")
                 for line in response.iter_lines():
@@ -78,7 +78,7 @@ def make_chat_request(prompt):
                         if content:
                             print(content, end='', flush=True)  # Print content in real-time
                             total_chars += len(content)
-                
+
                 print(f"\n\nTotal characters received: {total_chars}")
                 return total_chars
             else:
@@ -91,7 +91,7 @@ def make_chat_request(prompt):
         print(f"Network error occurred: {str(e)}")
     except Exception as e:
         print(f"Error occurred: {str(e)}")
-    
+
     return None
 
 if __name__ == "__main__":
