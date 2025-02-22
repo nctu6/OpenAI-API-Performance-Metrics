@@ -17,6 +17,8 @@ import os
 from dotenv import load_dotenv
 import uuid
 
+from datasets import load_dataset
+
 import logging
 
 load_dotenv()
@@ -53,9 +55,8 @@ if "" != file_log_level:
 # Suppress SSL warnings
 urllib3.disable_warnings(InsecureRequestWarning)
 
-count_id = 0
-
 questions = []
+count_id = 0
 
 class FileHandler:
     def __init__(self, filename: str, mode: str, virtual: bool = False):
@@ -175,7 +176,13 @@ class APIThroughputMonitor:
             chars_per_second = (total_chars - self.prev_total_chars) / (current_time - self.last_log_time)
             active_sessions = len([s for s in self.sessions.values() if s["status"] in ["Starting", "Processing"]])
             completed_sessions = len([s for s in self.sessions.values() if s["status"] == "Completed"])
-            
+
+            tokens_latency = [ self.sessions[id]['tokens_latency'] for id in self.sessions ]
+            tokens_amount = [ self.sessions[id]['tokens_amount'] for id in self.sessions ]
+            for id in self.sessions:
+                self.sessions[id]['tokens_latency'] = []
+                self.sessions[id]['tokens_amount'] = []
+
             status = {
                 "timestamp": datetime.now().isoformat(),
                 "elapsed_seconds": elapsed,
@@ -185,7 +192,9 @@ class APIThroughputMonitor:
                 "completed_sessions": completed_sessions,
                 "total_sessions": len(self.sessions),
                 "successful_requests": self.successful_requests,
-                "failed_requests": self.failed_requests
+                "failed_requests": self.failed_requests,
+                "tokens_latency": tokens_latency,
+                "tokens_amount": tokens_amount,
             }
             
             with open(self.log_file, 'a') as f:
@@ -251,6 +260,7 @@ class APIThroughputMonitor:
             return None
 
     def make_request(self, session_id):
+        logger.debug("SESSION ID", session_id)
         global count_id
         headers = {
             "Content-Type": "application/json",
@@ -274,11 +284,14 @@ class APIThroughputMonitor:
                     "response_time": None,
                     "error": None,
                     "total_chars": 0,
-                    "chunks_received": 0
+                    "chunks_received": 0,
+                    "tokens_latency": [],
+                    "tokens_amount": [],
                 }
 
             start_time = time.time()
-            
+            next_token_time = start_time
+
             # Make request with SSL verification disabled
             response = requests.post(
                 self.api_url,
@@ -294,6 +307,7 @@ class APIThroughputMonitor:
 
             # Write the payload to the file
             payload_record.write(json.dumps(payload))
+            payload_record.close()
 
             for line in response.iter_lines():
                 if line:
@@ -306,6 +320,10 @@ class APIThroughputMonitor:
                         self.sessions[session_id]["status"] = "Processing"
                         self.sessions[session_id]["chunks_received"] += 1
                         self.sessions[session_id]["total_chars"] += len(content)
+                        self.sessions[session_id]["tokens_amount"].append(len(content))
+                        self.sessions[session_id]["tokens_latency"].append(round(time.time() - next_token_time, 5))
+                        next_token_time = time.time()
+
             output_record.close()
 
             response_time = time.time() - start_time
@@ -373,16 +391,21 @@ class APIThroughputMonitor:
                     
                     time.sleep(0.1)
 
+def load_dataset_as_questions(dataset_name: str, template: str):
+    # I think user might want to implement a custom data loader
+    dataset = load_dataset(dataset_name)['train']
+    return [template.format(**data) for data in dataset]
+
 def main(
     model: str = "gpt-3.5-turbo",
     api_url: str = None,
     max_concurrent: int = 5,
     columns: int = 3,
-    log_file: str = "api_monitor.jsonl",
+    log_file: str = None,
     output_dir: str = None,
     env: str = None,
     dataset: str = None,
-    time_limit: int = 180
+    time_limit: int = 120
 ):
     global questions
     if env is not None:
@@ -393,14 +416,16 @@ def main(
         with open(dataset, "r") as f:
             for line in f:
                 questions.append(line.strip())
-    
+    questions = load_dataset_as_questions("tatsu-lab/alpaca", "{input}\nQuestion: {instruction}")
+
     # Set default values
-    # output_dir = output_dir if output_dir is not None else f"result-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     if output_dir is not None and not os.path.exists(output_dir):
         os.makedirs(output_dir)
     api_url = api_url if api_url is not None else os.environ.get('API_URL')
     api_key = os.environ.get('API_KEY')
     model = model if model is not None else os.environ.get('MODEL')
+
+    log_file = log_file if log_file is not None else f"{output_dir}/api_monitor.jsonl" if output_dir is not None else "api_monitor.jsonl"
 
     # Display configuration
     logger.info(f"API URL: {api_url}")
