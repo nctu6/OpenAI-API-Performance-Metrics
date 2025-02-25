@@ -404,19 +404,15 @@ def main(
     log_file: str = None,
     output_dir: str = None,
     env: str = None,
-    dataset: str = None,
+    dataset: str = "tatsu-lab/alpaca",
+    template: str = "{input}\nQuestion: {instruction}",
     time_limit: int = 120
 ):
     global questions
     if env is not None:
         load_dotenv(env)
-    if dataset is None:
-        questions = ["Tell me a story about a cat.", "Tell me a story about a dog.", "Tell me a story about a bird."]
-    else:
-        with open(dataset, "r") as f:
-            for line in f:
-                questions.append(line.strip())
-    questions = load_dataset_as_questions("tatsu-lab/alpaca", "{input}\nQuestion: {instruction}")
+
+    questions = load_dataset_as_questions(dataset, template)
 
     # Set default values
     if output_dir is not None and not os.path.exists(output_dir):
