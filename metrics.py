@@ -404,6 +404,8 @@ class APIThroughputMonitor:
                 executor.shutdown(wait=True)
                 # Force a final log update
                 self.log_status()
+                # Force a final console update
+                live.update(self.generate_status_table())
 
 def load_dataset_as_questions(dataset_name: str, template: str):
     # I think user might want to implement a custom data loader
