@@ -400,6 +400,11 @@ class APIThroughputMonitor:
 
                     time.sleep(0.1)
 
+                # Ensure all threads finish before exiting
+                executor.shutdown(wait=True)
+                # Force a final log update
+                self.log_status()
+
 def load_dataset_as_questions(dataset_name: str, template: str):
     # I think user might want to implement a custom data loader
     dataset = load_dataset(dataset_name)['train']
