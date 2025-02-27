@@ -4,6 +4,8 @@ from datetime import datetime
 import numpy
 from collections import defaultdict
 from transformers import AutoTokenizer
+import warnings
+warnings.filterwarnings("error", category=RuntimeWarning)
 
 ''' metrics
 concurrency
@@ -21,7 +23,7 @@ P99 (second)(99% TTFT time)
 
 def mean_without_zero(arr):
     masked_arr = numpy.ma.masked_equal(arr, 0)
-    return masked_arr.mean() if masked_arr.count() > 0 else 0
+    return float(masked_arr.mean()) if masked_arr.count() > 0 else 0
 
 
 def main(
@@ -73,7 +75,7 @@ def main(
                 for idx, tokens_latency in enumerate(status["tokens_latency"]):
                     if not tokens_latency:
                         if tbt_dict[idx] and type(tbt_dict[idx]) != float:
-                            tbt_dict[idx] = float(numpy.mean(tbt_dict[idx][1:])) # skip first token latency in each request
+                            tbt_dict[idx] = mean_without_zero(tbt_dict[idx][1:]) # skip first token latency in each request
                     else:
                         if tokens_latency[0] == status["first_token_latency"][idx]:
                             tbt_dict[idx].extend(tokens_latency[1:]) # skip first token latency in each request
@@ -83,7 +85,7 @@ def main(
 
         for idx, tbt in tbt_dict.items():
             if type(tbt) != float:
-                tbt_dict[idx] = numpy.mean(tbt)
+                tbt_dict[idx] = mean_without_zero(tbt)
         tbt_list = list(tbt_dict.values())
 
         for ttft in status["first_token_latency"]:
