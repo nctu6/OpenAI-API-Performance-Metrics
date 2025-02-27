@@ -16,9 +16,7 @@ import urllib3
 import os
 from dotenv import load_dotenv
 import uuid
-
 from datasets import load_dataset
-
 import logging
 
 load_dotenv()
@@ -98,6 +96,9 @@ class APIThroughputMonitor:
         self.last_update_time = self.start_time
         self.update_interval = 0.25  # Screen update interval in seconds
         self.output_dir = output_dir
+        self.log_status_buffer = Queue() # log to file is slow, keep in memory and save later
+        self.write_status_event = threading.Event()
+        self.write_status_thread = threading.Thread(target=self.write_status, daemon=True)
 
         # Initialize log file
         with open(self.log_file, 'w') as f:
@@ -168,6 +169,29 @@ class APIThroughputMonitor:
 
         return table
 
+    def write_status_to_file(self, status_list):
+        with open(self.log_file, 'a') as f:
+            for status in status_list:
+                f.write(json.dumps(status) + '\n')
+
+    def write_status(self):
+        while not self.write_status_event.is_set():
+            status_list = []
+            with self.lock:
+                for _ in range(3600):
+                    try:
+                        status_list.append(self.log_status_buffer.get(block=False))
+                    except:
+                        break
+            self.write_status_to_file(status_list)
+            time.sleep(1)
+
+        status_list = []
+        with self.lock:
+            while not self.log_status_buffer.empty():
+                status_list.append(self.log_status_buffer.get(block=False))
+        self.write_status_to_file(status_list)
+
     def log_status(self):
         current_time = time.time()
         elapsed = current_time - self.start_time
@@ -177,7 +201,6 @@ class APIThroughputMonitor:
             chars_per_second = (total_chars - self.prev_total_chars) / (current_time - self.last_log_time)
             active_sessions = len([s for s in self.sessions.values() if s["status"] in ["Starting", "Processing"]])
             completed_sessions = len([s for s in self.sessions.values() if s["status"] == "Completed"])
-
 
             ttft = [ self.sessions[id]['ttft'] for id in self.sessions ]
             tokens_latency = [ self.sessions[id]['tokens_latency'] for id in self.sessions ]
@@ -202,9 +225,7 @@ class APIThroughputMonitor:
                 "tokens_amount": tokens_amount,
             }
 
-            with open(self.log_file, 'a') as f:
-                f.write(json.dumps(status) + '\n')
-
+            self.log_status_buffer.put(status)
             self.prev_total_chars = total_chars
             self.last_log_time = current_time
 
@@ -323,6 +344,7 @@ class APIThroughputMonitor:
                     if data is None:
                         break
                     content = data["data"]["choices"][0]["delta"]["content"]
+
                     with self.lock:
                         latency = round(time.time() - next_token_time, 5)
                         self.sessions[session_id]["status"] = "Processing"
@@ -381,6 +403,7 @@ class APIThroughputMonitor:
         ) as live:
             self.session_id = 0
             self.end_time = time.time() + self.duration
+            self.write_status_thread.start()
             with ThreadPoolExecutor(max_workers=self.max_concurrent) as executor:
                 while time.time() < self.end_time:
                     current_time = time.time()
@@ -402,6 +425,8 @@ class APIThroughputMonitor:
                 executor.shutdown(wait=True)
                 # Force a final log update
                 self.log_status()
+                self.write_status_event.set()
+                self.write_status_thread.join()
                 # Force a final console update
                 live.update(self.generate_status_table())
 
