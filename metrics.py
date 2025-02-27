@@ -178,12 +178,12 @@ class APIThroughputMonitor:
             active_sessions = len([s for s in self.sessions.values() if s["status"] in ["Starting", "Processing"]])
             completed_sessions = len([s for s in self.sessions.values() if s["status"] == "Completed"])
 
+
             ttft = [ self.sessions[id]['ttft'] for id in self.sessions ]
             tokens_latency = [ self.sessions[id]['tokens_latency'] for id in self.sessions ]
             tokens_amount = [ self.sessions[id]['tokens_amount'] for id in self.sessions ]
 
             for id in self.sessions:
-                self.sessions[id]['ttft'] = -1
                 self.sessions[id]['tokens_latency'] = []
                 self.sessions[id]['tokens_amount'] = []
 
@@ -264,7 +264,8 @@ class APIThroughputMonitor:
             logger.debug(f"Error processing line: {line}")
             return None
 
-    def make_request(self, session_id):
+    def make_request(self):
+        session_id = self.session_id
         logger.debug("SESSION ID", session_id)
         global count_id
         headers = {
@@ -378,22 +379,19 @@ class APIThroughputMonitor:
             vertical_overflow="visible",
             auto_refresh=True
         ) as live:
+            self.session_id = 0
+            self.end_time = time.time() + self.duration
             with ThreadPoolExecutor(max_workers=self.max_concurrent) as executor:
-                end_time = time.time() + self.duration
-                session_id = 0
-                last_display_update = time.time()
-
-                while time.time() < end_time:
+                while time.time() < self.end_time:
                     current_time = time.time()
-
                     if current_time - self.last_log_time >= 1.0:
                         self.log_status()
 
                     if self.active_sessions < self.max_concurrent:
                         with self.lock:
                             self.active_sessions += 1
-                        session_id += 1
-                        executor.submit(self.make_request, session_id)
+                            self.session_id += 1
+                        executor.submit(self.make_request)
 
                     if self.should_update_display():
                         live.update(self.generate_status_table())
