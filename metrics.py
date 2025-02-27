@@ -96,6 +96,7 @@ class APIThroughputMonitor:
         self.last_update_time = self.start_time
         self.update_interval = 0.25  # Screen update interval in seconds
         self.output_dir = output_dir
+        self.queue_lock = threading.Lock()
         self.log_status_buffer = Queue() # log to file is slow, keep in memory and save later
         self.write_status_event = threading.Event()
         self.write_status_thread = threading.Thread(target=self.write_status, daemon=True)
@@ -131,9 +132,12 @@ class APIThroughputMonitor:
         for i in range(self.columns):
             table.add_column(f"Session Group {i+1}", justify="left")
 
-        # with self.lock: # Locking is not necessary here, since it will cause the hanging condition while make_request and log_status
-        if True:
+        with self.lock:
             sorted_sessions = sorted(self.sessions.items(), key=lambda x: int(x[0]))
+            # filter session status
+            sorted_sessions = [(session_id, info)
+                for (session_id, info) in sorted_sessions
+                if info["status"] in ("Starting", "Processing")]
             num_sessions = len(sorted_sessions)
             num_rows = math.ceil(num_sessions / self.columns)
 
@@ -153,19 +157,20 @@ class APIThroughputMonitor:
             total_chunks = sum(s["chunks_received"] for s in self.sessions.values())
             chars_per_sec = total_chars / elapsed_time if elapsed_time > 0 else 0
 
-            table.add_section()
-            stats_summary = (
-                f"[bold cyan]Summary Stats:[/bold cyan]\n"
-                f"Time: {elapsed_time:.1f}s \n"
-                f"Active: {self.active_sessions} | "
-                f"Total: {self.total_requests} | "
-                f"Success: {self.successful_requests} | "
-                f"Failed: {self.failed_requests}\n"
-                f"Chars/s: {chars_per_sec:.1f} | "
-                f"Total Chars: {total_chars} | "
-                f"Total Chunks: {total_chunks}"
-            )
-            table.add_row(stats_summary)
+        table.add_section()
+        stats_summary = (
+            f"[bold cyan]Summary Stats:[/bold cyan]\n"
+            f"Time: {elapsed_time:.1f}s \n"
+            f"Concurrency: {self.max_concurrent}\n"
+            f"Active: {self.active_sessions} | "
+            f"Total: {self.total_requests} | "
+            f"Success: {self.successful_requests} | "
+            f"Failed: {self.failed_requests}\n"
+            f"Chars/s: {chars_per_sec:.1f} | "
+            f"Total Chars: {total_chars} | "
+            f"Total Chunks: {total_chunks}"
+        )
+        table.add_row(stats_summary)
 
         return table
 
@@ -177,7 +182,7 @@ class APIThroughputMonitor:
     def write_status(self):
         while not self.write_status_event.is_set():
             status_list = []
-            with self.lock:
+            with self.queue_lock:
                 for _ in range(3600):
                     try:
                         status_list.append(self.log_status_buffer.get(block=False))
@@ -187,7 +192,7 @@ class APIThroughputMonitor:
             time.sleep(1)
 
         status_list = []
-        with self.lock:
+        with self.queue_lock:
             while not self.log_status_buffer.empty():
                 status_list.append(self.log_status_buffer.get(block=False))
         self.write_status_to_file(status_list)
@@ -223,11 +228,14 @@ class APIThroughputMonitor:
                 "first_token_latency": ttft,
                 "tokens_latency": tokens_latency,
                 "tokens_amount": tokens_amount,
+                "concurrency": self.max_concurrent,
             }
 
-            self.log_status_buffer.put(status)
             self.prev_total_chars = total_chars
             self.last_log_time = current_time
+
+        with self.queue_lock:
+            self.log_status_buffer.put(status)
 
     def process_stream_line(self, line):
         try:

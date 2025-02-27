@@ -68,7 +68,7 @@ def main(
                 t2 = t1 + float(status["elapsed_seconds"])
                 ts_list1.append(t1)
                 ts_list2.append(t2)
-                concurrency = int(max(concurrency, status["active_sessions"]))
+                concurrency = int(max(concurrency, status["concurrency"]))
                 total_requests = int(max(total_requests, status["total_sessions"]))
                 for idx, tokens_latency in enumerate(status["tokens_latency"]):
                     if not tokens_latency:
