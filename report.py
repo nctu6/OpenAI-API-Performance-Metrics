@@ -42,6 +42,7 @@ def main(
         raise ValueError(f"Tokenizer directory {tokenizer_dir} does not exist")
     report_dir = Path(report_dir)
     report_dir.mkdir(parents=True, exist_ok=True)
+    report_file = report_dir / f"{output_dir.name}.json"
 
     # Initialize variables
     concurrency = 0
@@ -138,13 +139,32 @@ def main(
     token_completion_throughput = total_completion_tokens / elapsed_time
     token_throughput = (total_prompt_tokens + total_completion_tokens) / elapsed_time
 
+    report_data = {
+        "concurrency": concurrency,
+        "total_requests": len(ttft_list),
+        "elapsed_time_seconds": round(elapsed_time, 5),
+        "total_prompt_tokens": total_prompt_tokens,
+        "total_completion_tokens": total_completion_tokens,
+        "completion_throughput": round(token_completion_throughput, 5),
+        "token_throughput": round(token_throughput, 5),
+        "RPS": round(RPS, 5),
+        "TTFT_seconds": round(TTFT, 5),
+        "P99_seconds": round(P99, 5),
+        "P50_seconds": round(P50, 5),
+        "TBT_seconds": round(TBT, 5),
+    }
+    with open(report_file, "a+") as f:
+        json.dump(report_data, f, indent=4)
+        f.write("\n")
+
+    print(f"Results saved to {report_file}:")
     print(f"concurrency: {concurrency}")
     print(f"total requests: {len(ttft_list)}")
     print(f"elapsed time (second): {elapsed_time:.5f}")
     print(f"total prompt tokens: {total_prompt_tokens}")
     print(f"total completion tokens: {total_completion_tokens}")
-    print(f"token throughput (completion tokens): {token_completion_throughput:.5f}")
-    print(f"token throughput (prompt+completion tokens): {token_throughput:.5f}")
+    print(f"token throughput (completion tokens / second): {token_completion_throughput:.5f}")
+    print(f"token throughput (prompt+completion tokens / second): {token_throughput:.5f}")
     print(f"RPS: {RPS:.5f}")
     print(f"TTFT (second): {TTFT:.5f}")
     print(f"P99 (second): {P99:.5f}")
