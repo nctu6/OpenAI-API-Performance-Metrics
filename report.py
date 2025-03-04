@@ -54,6 +54,7 @@ def main(
     TBT = 0
 
     # Read data
+    as_list = []
     ttft_list = []
     ts_list1 = []
     ts_list2 = []
@@ -66,6 +67,7 @@ def main(
             for line in file:
                 status = json.loads(line)
 
+                as_list.append(status["active_sessions"])
                 ts = datetime.fromisoformat(status["timestamp"])
                 t1 = ts.timestamp()
                 t2 = t1 + float(status["elapsed_seconds"])
@@ -94,6 +96,9 @@ def main(
             if ttft != -1:
                 ttft_list.append(ttft)
 
+    max_as = max(as_list)
+    min_as = min((x for x in as_list if x > 0), default=None)
+    mean_as = mean_without_zero(as_list)
     elapsed_time = abs(min(ts_list1) - max(ts_list2))
     RPS = total_requests / elapsed_time
     TTFT = mean_without_zero(ttft_list)
@@ -141,6 +146,7 @@ def main(
 
     report_data = {
         "concurrency": concurrency,
+        "active_sessions (max,min,avg)": [max_as, min_as, round(mean_as, 5)],
         "total_requests": len(ttft_list),
         "elapsed_time_seconds": round(elapsed_time, 5),
         "total_prompt_tokens": total_prompt_tokens,
@@ -159,6 +165,7 @@ def main(
 
     print(f"Results saved to {report_file}:")
     print(f"concurrency: {concurrency}")
+    print(f"active_sessions (max,min,avg): {max_as}, {min_as}, {mean_as:.5f}")
     print(f"total requests: {len(ttft_list)}")
     print(f"elapsed time (second): {elapsed_time:.5f}")
     print(f"total prompt tokens: {total_prompt_tokens}")
