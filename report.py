@@ -157,7 +157,7 @@ def main(
         "TTFT_seconds": round(TTFT, 5),
         "P99_seconds": round(P99, 5),
         "P50_seconds": round(P50, 5),
-        "TBT_seconds": round(TBT, 5),
+        "token_latency_seconds": round(TBT, 5),
     }
     with open(report_file, "a+") as f:
         json.dump(report_data, f, indent=4)
@@ -176,7 +176,7 @@ def main(
     print(f"TTFT (second): {TTFT:.5f}")
     print(f"P99 (second): {P99:.5f}")
     print(f"P50 (second): {P50:.5f}")
-    print(f"TBT (second): {TBT:.5f}")
+    print(f"token latency (second): {TBT:.5f}")
 
 
 if __name__ == "__main__":
